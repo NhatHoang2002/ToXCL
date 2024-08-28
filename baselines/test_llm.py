@@ -1,13 +1,17 @@
 import csv
 import os
+import sys
 import time
 from argparse import ArgumentParser
 
 import openai
 import pandas as pd
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from eval_metrics import (compute_classification_scores,
                           compute_generation_scores)
 from tqdm import tqdm
+
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 openai.api_key = "<YOUR_OPENAI_API_KEY}"
@@ -49,13 +53,14 @@ def get_chatgpt_answer(prompt):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument('model_name', choices=['chatgpt', 'mistral'])
-    parser.add_argument('dataset_name')
-    parser.add_argument('--output_dir', default='saved/llm')
+    parser.add_argument('--test_data', type=str)
+    parser.add_argument('--output_dir', default='../saved/llm')
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
-    output_path = os.path.join(args.output_dir, f"{args.model_name}_{args.dataset_name}_result.csv")
+    dataset_name = args.test_data.split('/')[-1].split('_')[0]
+    output_path = os.path.join(args.output_dir, f"{args.model_name}_{dataset_name}_result.csv")
 
     if args.model_name == 'chatgpt':
         get_output_fn = get_chatgpt_answer
@@ -65,7 +70,7 @@ if __name__ == "__main__":
         get_output_fn = get_mistral_answer
 
     test_data = []
-    with open(f"data/{args.dataset_name}_valid.csv", 'r', newline='') as file:
+    with open(args.test_data, 'r', newline='') as file:
         csvreader = csv.reader(file)
         _ = next(csvreader)
         for row in csvreader:
@@ -75,19 +80,19 @@ if __name__ == "__main__":
                 'explanation': row[3].strip(),
             })
 
-    # test_output = []
-    # for idx, row in tqdm(enumerate(test_data), total=len(test_data)):
-    #     tqdm.write(f">>> {row['text']}")
-    #     prompt = PROMPT_TEMPLATE.format(row['text'])
-    #     output = get_output_fn(prompt)
+    test_output = []
+    for idx, row in tqdm(enumerate(test_data), total=len(test_data)):
+        tqdm.write(f">>> {row['text']}")
+        prompt = PROMPT_TEMPLATE.format(row['text'])
+        output = get_output_fn(prompt)
 
-    #     test_output.append({
-    #         'text': row['text'],
-    #         'output': output,
-    #         'label': row['label'],
-    #         'gold_explanation': row['explanation']
-    #     })
-    #     pd.DataFrame(test_output).to_csv(output_path, index=False)
+        test_output.append({
+            'text': row['text'],
+            'output': output,
+            'label': row['label'],
+            'gold_explanation': row['explanation']
+        })
+        pd.DataFrame(test_output).to_csv(output_path, index=False)
 
     df = pd.read_csv(output_path)
     cls_ground_truth = df.label.tolist()

@@ -92,6 +92,6 @@ def compute_generation_scores(ground_truths_generation, generation_output):
                     sum_meteor += 0.25
 
     with torch.no_grad():
-        sum_bertscore += bert_score.score(new_true, new_pred, lang="en")[2].sum().item()
+        sum_bertscore += bert_score.score(new_true, new_pred, lang="en")[2].sum().item() if len(new_pred) > 0 else 0
 
     return round(100*sum_bleu/N, 4), round(100*sum_rouge/N, 4), round(100*sum_meteor/N, 4), round(100*sum_bertscore/N, 4)

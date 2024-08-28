@@ -35,6 +35,22 @@ conda activate toxcl
 pip install -r requirements.txt
 ```
 
+## Datasets
+
+We upload the pre-processed datasets used in the paper:
+- Implicit Hate Corpus (IHC): `IHC_train.csv`, `IHC_valid.csv`
+- Social Bias Inference Corpus (SBIC): `SBIC_train.csv`, `SBIC_valid.csv`, `SBIC_test.csv`
+- HateXplain (used to train the Target Generator TG): `TG_train.csv`, `TG_valid.csv`
+
+For IHC and SBIC:
+- Column for input:
+    - Use `raw_text` for the original input, format: "{raw_text}"
+    - Use `text` for input with target groups, format: "Target: {TG} Post: {raw_text}"
+- Comlumn for output:
+    - Use `explanations` for the baseline group G2, format: "{explanations}
+    - Use `output` for E2E generation, format: "{class} &lt;SEP&gt;
+ {explanations}"
+
 ## Baselines
 
 <details>
@@ -42,7 +58,7 @@ pip install -r requirements.txt
 
 ```bash
 # `model_checkpoint` used in paper: GroNLP/hateBERT, bert-base-uncased, google/electra-base-discriminator, roberta-base
-python -m train_encoder_arch \
+python -m baselines.train_encoder_arch \
     --model_name {model_checkpoint} \
     --output_dir {output_dir} \
     --dataset_name {IHC | SBIC}
@@ -53,7 +69,7 @@ python -m train_encoder_arch \
   <summary><b>Train Decoder-only model (GPT-2)</b></summary>
 
 ```bash
-python -m train_decoder_arch \
+python -m baselines.train_decoder_arch \
     --model_name_or_path gpt2 \
     --output_dir {output_dir} \
     --dataset_name {IHC | SBIC} \
@@ -71,7 +87,7 @@ python -m train_decoder_arch \
 
 ```bash
 # `model_checkpoint` used in paper: facebook/bart-base, t5-base, google/flan-t5-base
-python train_encoder_decoder_arch.py \
+python baselines/train_encoder_decoder_arch \
     --model_name_or_path {model_checkpoint} \
     --output_dir {output_dir} \
     --dataset_name {IHC | SBIC} \
@@ -97,7 +113,7 @@ python train_encoder_decoder_arch.py \
   <summary><b>Zero-shot inference with LLM (ChatGPT, Mistral-7b)</b></summary>
 
 ```bash
-python test_llm.py mistral IHC saved/llm/mistral_ihc_result.csv
+python baselines/test_llm.py mistral --test_data data/IHC_valid.csv --output_dir saved/llm
 ```
 </details>
 
@@ -107,15 +123,16 @@ Argument notes:
     - Use `text` for input with target groups, format: "Target: {TG} Post: {raw_text}"
 -  `summary_column`:
     - Use `explanations` for group G2, format: "{explanations}
-    - Use `output` for E2E generation, format: "{class} <sep> {explanations}"
+    - Use `output` for E2E generation, format: "{class} &lt;SEP&gt; {explanations}"
 
 
 ## ToXCL
 
+**Note**: The `train.py` script does not incorporate the Target Group Generator (TG) during training. Instead, we pre-generate the target groups separately and store them in the dataset to accelerate the training process. The augmented dataset can be found in the data folder. For a complete inference pipeline, please refer to `inference.ipynb`.
+
 ```bash
-# Train Target Group Generator
-# After training, run inference on the desired dataset. For convenient, we have included the revised datasets in folder `data`
-python train_encoder_decoder_arch.py \
+# (1) Train Target Group Generator
+python baselines/train_encoder_decoder_arch.py \
     --model_name_or_path t5-base \
     --output_dir saved/T5-TG \
     --dataset_name TG \
@@ -135,18 +152,25 @@ python train_encoder_decoder_arch.py \
     --evaluation_strategy steps \
     --load_best_model --report_to none
 
-# Train teacher model
-python -m train_encoder_arch \
+# (2) Train teacher model
+python -m baselines.train_encoder_arch \
     --model_name roberta-large \
-    --output_dir saved/roberta-L \
+    --output_dir saved/RoBERTa-L_IHC \
     --dataset_name IHC \
     --text_column_num 1     # 1 is with Target Groups, 0 otherwise
 
-# Train ToXCL
-python -m train_ToXCL \
+# (3) Train ToXCL
+# Remove the argument `--teacher_name_or_path` to train the model without teacher forcing mode
+python -m train \
     --model_name_or_path google/flan-t5-base \
-    --teacher_name_or_path saved/roberta-L \
+    --teacher_name_or_path saved/RoBERTa-L_IHC \
     --output_dir saved/ToXCL \
+    --dataset_name IHC
+
+CUDA_VISIBLE_DEVICES=2,3 accelerate launch -m train_acc \
+    --model_name_or_path google/flan-t5-base \
+    --teacher_name_or_path saved/RoBERTa-L_IHC \
+    --output_dir saved/ToXCL_acc \
     --dataset_name IHC
 ```
 

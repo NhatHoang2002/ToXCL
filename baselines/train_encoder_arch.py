@@ -100,7 +100,7 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         gradient_accumulation_steps=1,    
         per_device_train_batch_size=16,
-        per_device_eval_batch_size= 32,
+        per_device_eval_batch_size=32,
         disable_tqdm=False,
         save_total_limit=2,
         load_best_model_at_end=True,
@@ -130,3 +130,10 @@ if __name__ == "__main__":
     )
     trainer.train()
     print(trainer.evaluate(test_data))
+
+"""
+python -m train_encoder_arch \
+    --model_name bert-base-uncased \
+    --output_dir saved/BERT-B_IHC \
+    --dataset_name IHC
+"""

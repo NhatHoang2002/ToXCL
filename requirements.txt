@@ -1,8 +1,9 @@
-accelerate==0.28.0
+accelerate==0.33.0
 bert_score==0.3.13
 evaluate==0.4.1
 openai
 rouge-score==0.1.2
 scikit-learn==1.3.2
+tokenizers==0.19.1
 torch==2.2.1
-transformers==4.38.2
+transformers==4.44.2
