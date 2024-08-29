@@ -41,7 +41,7 @@ def load_data(file_path, text_column_num):
             data.append({
                 "document": row[text_column_num].strip(),
                 "label": row[2].strip(),
-                "summary": row[3].strip(),
+                "summary": row[4].strip(),
             })
     return data
 
