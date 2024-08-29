@@ -22,7 +22,7 @@ class ToXCL(nn.Module):
         self.tg_tokenizer = tg_tokenizer
 
         self.num_labels = num_labels
-        self.classifier = nn.Linear(hidden_size, num_labels)
+        self.classifier = nn.Linear(hidden_size, num_labels).to(self.device)
         self.loss_fct = nn.BCELoss()
         self.kl_loss = nn.KLDivLoss(reduction="batchmean", log_target=True)
         self.activation = nn.Softmax(dim=-1)
@@ -32,7 +32,7 @@ class ToXCL(nn.Module):
         last_hidden_state = outputs.encoder_last_hidden_state
 
         cls_token_emb = torch.mean(last_hidden_state, dim=1).squeeze()
-        logits = self.classifier(cls_token_emb).squeeze().to(self.device)
+        logits = self.classifier(cls_token_emb).squeeze()
         logits = logits.view(-1, self.num_labels)
         return self.activation(logits)
 
@@ -74,7 +74,7 @@ class ToXCL(nn.Module):
 
         # (3) Conditional Decoding Constraint
         if apply_constraints:
-            explainations = ["none" if cls_pred == "normal" else expl for cls_pred, expl in zip(prediction_labels, decoded_explanations)]
+            decoded_explanations = ["none" if cls_pred == "normal" else expl for cls_pred, expl in zip(prediction_labels, decoded_explanations)]
 
         return dict(target_groups=decoded_tg_outputs, detections=prediction_labels, explanations=decoded_explanations)
 

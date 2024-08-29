@@ -129,7 +129,6 @@ def main(args):
             training_stats = json.load(file)
         best_result = training_stats[-1]['Best result']
         num_step = training_stats[-1]['Step']
-    best_checkpoint = model
 
     for epoch_i in range(0, args.num_epochs):
         print("")
@@ -228,7 +227,7 @@ def main(args):
                                 teacher_logits=teacher_logits
                             )
 
-                            generated_lm_texts = model.generate_expl(
+                            gen_preds = model.generate_expl(
                                 input_ids=b_input_ids,
                                 attention_mask=b_attention_mask,
                                 num_beams=4,
@@ -240,39 +239,35 @@ def main(args):
                         cls_preds = cls_outputs.argmax(dim=-1).cpu().numpy()
                         cls_labels = b_teacher_cls.cpu().numpy()
 
-                        generated_lm_texts = decoder_tokenizer.batch_decode(generated_lm_texts, skip_special_tokens=True)
-                        b_lm_labels = b_lm_labels.detach().clone()
-                        b_lm_labels[b_lm_labels == -100] = decoder_tokenizer.pad_token_id
-                        b_lm_labels = decoder_tokenizer.batch_decode(b_lm_labels, skip_special_tokens=True)
+                        gen_preds = decoder_tokenizer.batch_decode(gen_preds, skip_special_tokens=True)
+                        gen_labels = b_lm_labels.detach().clone()
+                        gen_labels[gen_labels == -100] = decoder_tokenizer.pad_token_id
+                        gen_labels = decoder_tokenizer.batch_decode(gen_labels, skip_special_tokens=True)
 
                         # Conditional Decoding Constraint
-                        generated_lm_texts = ["none" if cls_pred == "normal" else expl for cls_pred, expl in zip(cls_preds, generated_lm_texts)]
+                        gen_preds = ["none" if cls_pred == 0 else expl for cls_pred, expl in zip(cls_preds, gen_preds)]
 
                         eval_cls_preds.extend(cls_preds)
                         eval_cls_labels.extend(cls_labels)
-                        eval_gen_preds.extend(generated_lm_texts)
-                        eval_gen_labels.extend(b_lm_labels)
+                        eval_gen_preds.extend([text.split('SEP>')[-1].strip() for text in gen_preds])
+                        eval_gen_labels.extend([text.split('SEP>')[-1].strip() for text in gen_labels])
 
                         total_eval_lm_loss += lm_loss.item()
                         total_eval_cls_loss += cls_loss.item()   
                         total_eval_kl_loss += kl_loss.item()
 
-                    print("generated_lm_texts: ", generated_lm_texts)
-                    print("groundtruth_lm_texts: ", b_lm_labels)
-                    generation_scores = compute_generation_scores(generated_lm_texts, b_lm_labels)
-                    bleu = generation_scores[0]
-                    rouge = generation_scores[1] 
-                    meteor = generation_scores[2]
-                    bertscore = generation_scores[3]
-                    acc, f1 = compute_classification_scores(cls_labels, cls_preds)
+                    print("gen_preds: ", gen_preds)
+                    print("gen_labels: ", gen_labels)
+                    acc, f1 = compute_classification_scores(eval_cls_labels, eval_cls_preds)
+                    bleu, rouge, meteor, bertscore = compute_generation_scores(eval_gen_labels, eval_gen_preds)
 
                     print()
                     print("  Average valid LM: {0:.4f}".format(total_eval_lm_loss/len(validation_dataloader)))
                     print("  Average valid CLS: {0:.4f}".format(total_eval_cls_loss/len(validation_dataloader)))
                     print("  Average valid KL: {0:.4f}".format(total_eval_kl_loss/len(validation_dataloader)))
                     
-                    print(f"Epoch {epoch_i + 1} step {num_step} generation evaluations: BLEU-4: {bleu}, ROUGE-L: {rouge}, METEOR: {meteor}, BERTSCORE: {bertscore}")
                     print(f"Epoch {epoch_i + 1} step {num_step} classification evaluations: Acc: {acc}, F1: {f1}")
+                    print(f"Epoch {epoch_i + 1} step {num_step} generation evaluations: BLEU-4: {bleu}, ROUGE-L: {rouge}, METEOR: {meteor}, BERTSCORE: {bertscore}")
 
                     # Record all statistics at this epoch
                     training_stats.append({
@@ -280,12 +275,12 @@ def main(args):
                         'Best result': best_result,
                         'Avg train LM loss': total_train_lm_loss / (num_step+1),
                         'Avg train CLS loss': total_train_cls_loss / (num_step+1),
-                        'Avg valid KL loss': total_train_kl_loss / (num_step+1),
+                        'Avg train KL loss': total_train_kl_loss / (num_step+1),
                         'Avg valid LM loss': total_eval_lm_loss/len(validation_dataloader),
                         'Avg valid CLS loss': total_eval_cls_loss/len(validation_dataloader),
                         'Avg valid KL loss': total_eval_kl_loss/len(validation_dataloader),
-                        'Generation evaluation': f"BLEU-4: {bleu}, ROUGE-L: {rouge}, METEOR: {meteor}, BERTSCORE: {bertscore}",
                         'CLS evaluation': f"Acc: {acc}, F1: {f1}",
+                        'Generation evaluation': f"BLEU-4: {bleu}, ROUGE-L: {rouge}, METEOR: {meteor}, BERTSCORE: {bertscore}",
                     })
 
                     if total_eval_lm_loss/len(validation_dataloader) < best_result:
@@ -293,8 +288,7 @@ def main(args):
                         best_result = total_eval_lm_loss/len(validation_dataloader)
                         training_stats[-1]["Best result"] = best_result
 
-                        best_checkpoint = model
-                        best_checkpoint.save_checkpoint(os.path.join(args.output_dir, "best_ckpt"), is_best=True)
+                        model.save_checkpoint(os.path.join(args.output_dir, "best_ckpt"), is_best=True)
                     model.save_checkpoint(args.output_dir, is_best=False,
                                           optimizer=optimizer, scheduler=scheduler, training_stats=training_stats)
                     print("Successfully saved checkpoint.")
@@ -321,7 +315,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_epochs', type=int, default=10, help="Number of epochs")
     parser.add_argument("--train_batch_size", type=int, default=16, help="Training batch size")
     parser.add_argument("--valid_batch_size", type=int, default=32, help="Validation batch size")
-    parser.add_argument("--learning_rate", type=float, default=1e-5, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=2e-5, help="Learning rate")
     parser.add_argument('--warmup_steps', type=int, default=100)
     parser.add_argument('--max_length', type=int, default=256)
     parser.add_argument("--logging_steps", type=int, default=500, help="Number of steps between logging")
